@@ -1,0 +1,64 @@
+<html>
+	<head>
+		<meta charset="utf-8">
+	</head>
+	<body>
+		<img id="grouchified-image" src=""/>
+		
+		<input id="image-input" type='file'>
+	</body>
+	<script src="wasm_exec.js"></script>
+	<script>
+		// Grouchify image - i.e. put mask on face (implemented in go - function needs to be registered here)
+		// =========================================
+		let grouchifyImageFunc; // variable holds the go func to grouchify the image
+		let resolveGrouchifyImageFuncReceived; // resolve-function of the promise to be called when a func is assigned to grouchifyImageFunc
+		function setGrouchifyImageFunc(callback) { // function to be called from go land to assign a go func to the js var grouchifyImageFunc
+			grouchifyImageFunc = callback
+			resolveGrouchifyImageFuncReceived() // resolves the grouchifyImageFuncReceived promise
+		}
+		let grouchifyImageFuncReceived = new Promise(resolve => { // promise to be resolved when a func is assigned to grouchifyImageFunc
+			resolveGrouchifyImageFuncReceived = resolve; // assign the resolve function to resolveGrouchifyImageFuncReceived
+		});
+
+		// Display grouchified image (javascript code - is called from within go code)
+		// =================================================
+		let grouchifiedImage = ""; // variable to hold the grouchified image
+		function appendGrouchifiedImageChunk(imageChunk) { // function to be called from go land to send the grouchified image to js land in chunks since long strings cause problems
+			grouchifiedImage += imageChunk;
+
+		}
+		function showImage() { // function to be called from go land to show the grouchified image when the entire image has been sent to js land			
+			document.getElementById("grouchified-image").src = grouchifiedImage;
+		}
+
+		// Read image from client computer and pass it to go land for grouchification 
+		// ==========================================================================
+		function readImageInputAndGrouchifyImage() {
+			if (this.files && this.files[0]) {
+				var b64ImageInput = "";
+				// read image nput
+				var fileReader = new FileReader();
+				fileReader.addEventListener("load", function(e) {
+					b64ImageInput = e.target.result;
+					grouchifyImageFunc(b64ImageInput)
+				}); 
+				fileReader.readAsDataURL( this.files[0] );
+			}
+		}
+
+		// Main - instatiate WASM and wait for go function to be registered & user to choose image
+		// =======================================================================================
+		async function run() { 
+			const go = new Go();
+			WebAssembly.instantiateStreaming(fetch("main.wasm"), go.importObject).then((result) => {
+				go.run(result.instance);
+			});
+			
+			await grouchifyImageFuncReceived;
+			document.getElementById("image-input").addEventListener("change", readImageInputAndGrouchifyImage);
+		}
+
+		run();
+	</script>
+</html>
